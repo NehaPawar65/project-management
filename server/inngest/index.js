@@ -177,15 +177,17 @@ const syncWorkspaceMemberCreation = inngest.createFunction(
   async ({ event }) => {
     const { data } = event;
 
-    await prisma.workspaceMember.create({
-      data: {
-        userId: data.user_id,
-        workspaceId: data.organization_id,
-        role: String(data.role_name).toUpperCase(),
-      },
-    });
-  }
-);
+  await prisma.workspace.create({
+    data: {
+      id: data.id,
+      name: data.name,
+      slug: data.slug,
+      ownerId: data.owner_id,
+      image: data.image_url || "",
+    },
+  });
+
+});
 
 // ===============================
 // Export all functions
