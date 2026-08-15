@@ -1,9 +1,9 @@
 generator client {
-    provider        = "prisma-client-js"
+    provider = "prisma-client-js"
 }
 
 datasource db {
-    provider  = "postgresql"
+    provider = "postgresql"
 }
 
 enum WorkspaceRole {
@@ -77,26 +77,28 @@ model WorkspaceMember {
     workspaceId String
     message     String        @default("")
     role        WorkspaceRole @default(MEMBER)
-    user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-    workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
-    @@unique([userId, workspaceId]) // prevent duplicate membership
+    user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+    workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+    @@unique([userId, workspaceId])
 }
 
 model Project {
-    id          String          @id @default(uuid())
+    id          String        @id @default(uuid())
     name        String
     description String?
-    priority    Priority        @default(MEDIUM)
-    status      ProjectStatus   @default(ACTIVE)
+    priority    Priority      @default(MEDIUM)
+    status      ProjectStatus @default(ACTIVE)
     start_date  DateTime?
     end_date    DateTime?
     team_lead   String
     workspaceId String
-    progress    Int             @default(0)
-    createdAt   DateTime        @default(now())
-    updatedAt   DateTime        @updatedAt
-    members     ProjectMember[]
+    progress    Int           @default(0)
+    createdAt   DateTime      @default(now())
+    updatedAt   DateTime      @updatedAt
+
+    members ProjectMember[]
 
     owner     User      @relation("ProjectOwner", fields: [team_lead], references: [id], onDelete: Cascade)
     workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
@@ -107,10 +109,11 @@ model ProjectMember {
     id        String  @id @default(uuid())
     userId    String
     projectId String
-    user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-    project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
-    @@unique([userId, projectId]) // prevent duplicate membership
+    user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+    project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+    @@unique([userId, projectId])
 }
 
 model Task {
