@@ -1,56 +1,89 @@
+import { prisma } from "../config/prisma.js";
 
+// Add comment
+export const addComment = async (req, res) => {
+    try {
+        const { userId } = req.auth();
+        const { content, taskId } = req.body;
 
-//Add comment 
-
-import { prisma } from "../config/prisma";
-
-export const addComment = async (params) => {
-    try{
-        const { userId } = await requestAnimationFrame.auth();
-        const {content, taskId } = requestAnimationFrame.body;
-
-        //check if user is projectmember
+        // Check if task exists
         const task = await prisma.task.findUnique({
             where: { id: taskId },
-        }),
-         
+        });
+
+        if (!task) {
+            return res.status(404).json({
+                message: "Task not found",
+            });
+        }
+
+        // Check if user is project member
         const project = await prisma.project.findUnique({
-            where: {id: task.projectId},
-            include: {members: {include:{user: true}}}
-        })
+            where: { id: task.projectId },
+            include: {
+                members: {
+                    include: {
+                        user: true,
+                    },
+                },
+            },
+        });
 
-        if (!projct){
-            return res.status(404).json({ message: "Project not found" });
+        if (!project) {
+            return res.status(404).json({
+                message: "Project not found",
+            });
         }
-        const member = project.members.find(()=> member.userId === userId);
 
-        if(!member){
-            return res.status(403).json({message: "You are not member of this project" });
+        const member = project.members.find(
+            (member) => member.userId === userId
+        );
+
+        if (!member) {
+            return res.status(403).json({
+                message: "You are not a member of this project",
+            });
         }
-        const comment = await prisma.comment.create({data:{taskId, content,userId},
-        include: {user: true}
-    });
 
-    res.json({comment});
+        const comment = await prisma.comment.create({
+            data: {
+                taskId,
+                content,
+                userId,
+            },
+            include: {
+                user: true,
+            },
+        });
+
+        res.json({ comment });
     } catch (error) {
         console.log(error);
-        res.status(500).json({ message: error.code || error.message});
 
+        res.status(500).json({
+            message: error.code || error.message,
+        });
     }
-}
+};
 
+// Get comments for task
+export const getTaskComments = async (req, res) => {
+    try {
+        const { taskId } = req.params;
 
-//Get comments for task
-export const getTaskComments = async (res, req) => {
-    try{
-        const {taskId} = req.params;
-        const comments = await prisma.commment.findMany({
-            where: {taskId}, include: {user: true}
-        })
-        res.json({comments})
-    }catch (error) {
+        const comments = await prisma.comment.findMany({
+            where: { taskId },
+            include: {
+                user: true,
+            },
+        });
+
+        res.json({ comments });
+    } catch (error) {
         console.log(error);
-        res.status(500).json({ message: error.code || error.message});
 
+        res.status(500).json({
+            message: error.code || error.message,
+        });
     }
-}
+};
