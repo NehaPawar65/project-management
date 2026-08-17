@@ -1,192 +1,140 @@
 import { prisma } from "../config/prisma.js";
 
 // =====================================================
-// Get all workspaces for the logged-in user
+// GET LOGGED-IN USER'S WORKSPACES
 // =====================================================
-
 export const getUserWorkspaces = async (req, res) => {
-    try {
-        const userId = req.userId;
+  try {
+    const { userId } = await req.auth();
 
-        if (!userId) {
-            return res.status(401).json({
-                error: "Unauthorized"
-            });
-        }
-
-        const workspaces = await prisma.workspace.findMany({
-            where: {
-                members: {
-                    some: {
-                        userId: userId
-                    }
-                }
+    const workspaces = await prisma.workspace.findMany({
+      where: {
+        members: {
+          some: { userId },
+        },
+      },
+      include: {
+        owner: true,
+        members: {
+          include: {
+            user: true,
+          },
+        },
+        projects: {
+          include: {
+            members: {
+              include: {
+                user: true,
+              },
             },
-            include: {
-                members: {
-                    include: {
-                        user: true
-                    }
-                },
-                projects: {
-                    include: {
-                        tasks: {
-                            include: {
-                                assignee: true,
-                                comments: {
-                                    include: {
-                                        user: true
-                                    }
-                                }
-                            }
-                        }
-                    }
-                },
-                owner: true
-            }
-        });
+            tasks: {
+              include: {
+                assignee: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: {
+        createdAt: "asc",
+      },
+    });
 
-        return res.status(200).json({
-            workspaces
-        });
+    return res.json({ workspaces });
+  } catch (error) {
+    console.error("Get Workspaces Error:", error);
 
-    } catch (error) {
-        console.error("Get workspaces error:", error);
-
-        return res.status(500).json({
-            error: "Failed to fetch workspaces"
-        });
-    }
+    return res.status(500).json({
+      message: error.message || error.code,
+    });
+  }
 };
 
-
 // =====================================================
-// Add member to workspace
+// ADD MEMBER TO WORKSPACE
 // =====================================================
-
 export const addMember = async (req, res) => {
-    try {
-        const currentUserId = req.userId;
+  try {
+    const { userId } = await req.auth();
 
-        if (!currentUserId) {
-            return res.status(401).json({
-                error: "Unauthorized"
-            });
-        }
+    const { workspaceId, email, role } = req.body;
 
-        const {
-            email,
-            role,
-            workspaceId,
-            message
-        } = req.body;
+    // Find workspace and its members
+    const workspace = await prisma.workspace.findUnique({
+      where: {
+        id: workspaceId,
+      },
+      include: {
+        members: {
+          include: {
+            user: true,
+          },
+        },
+      },
+    });
 
-        // -------------------------------------------------
-        // Validate required fields
-        // -------------------------------------------------
-
-        if (!email || !workspaceId || !role) {
-            return res.status(400).json({
-                error: "Email, workspaceId and role are required"
-            });
-        }
-
-        // -------------------------------------------------
-        // Validate role
-        // -------------------------------------------------
-
-        if (!["ADMIN", "MEMBER"].includes(role)) {
-            return res.status(400).json({
-                error: "Invalid role"
-            });
-        }
-
-        // -------------------------------------------------
-        // Find user by email
-        // -------------------------------------------------
-
-        const user = await prisma.user.findUnique({
-            where: {
-                email: email
-            }
-        });
-
-        if (!user) {
-            return res.status(404).json({
-                error: "User not found"
-            });
-        }
-
-        // -------------------------------------------------
-        // Find workspace
-        // -------------------------------------------------
-
-        const workspace = await prisma.workspace.findUnique({
-            where: {
-                id: workspaceId
-            },
-            include: {
-                members: true
-            }
-        });
-
-        if (!workspace) {
-            return res.status(404).json({
-                error: "Workspace not found"
-            });
-        }
-
-        // -------------------------------------------------
-        // Check whether current user is an ADMIN
-        // -------------------------------------------------
-
-        const currentMember = workspace.members.find(
-            (member) => member.userId === currentUserId
-        );
-
-        if (!currentMember || currentMember.role !== "ADMIN") {
-            return res.status(403).json({
-                error: "You do not have admin privileges to add members to this workspace"
-            });
-        }
-
-        // -------------------------------------------------
-        // Check whether target user is already a member
-        // -------------------------------------------------
-
-        const existingMember = workspace.members.find(
-            (member) => member.userId === user.id
-        );
-
-        if (existingMember) {
-            return res.status(400).json({
-                error: "User is already a member of this workspace"
-            });
-        }
-
-        // -------------------------------------------------
-        // Add workspace member
-        // -------------------------------------------------
-
-        const member = await prisma.workspaceMember.create({
-            data: {
-                userId: user.id,
-                workspaceId: workspace.id,
-                role: role,
-                message: message || ""
-            }
-        });
-
-        return res.status(201).json({
-            message: "Member added successfully",
-            member
-        });
-
-    } catch (error) {
-        console.error("Add member error:", error);
-
-        return res.status(500).json({
-            error: "Failed to add member"
-        });
+    if (!workspace) {
+      return res.status(404).json({
+        message: "Workspace not found",
+      });
     }
+
+    // Only a workspace admin can add members
+    const isAdmin = workspace.members.some(
+      (member) => member.userId === userId && member.role === "ADMIN"
+    );
+
+    if (!isAdmin) {
+      return res.status(403).json({
+        message: "You do not have permission to add members to this workspace",
+      });
+    }
+
+    // Check if user is already a member
+    const existingMember = workspace.members.find(
+      (member) => member.user.email === email
+    );
+
+    if (existingMember) {
+      return res.status(400).json({
+        message: "User is already a member of this workspace",
+      });
+    }
+
+    // Find the user being added
+    const user = await prisma.user.findUnique({
+      where: {
+        email,
+      },
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        message: "User not found",
+      });
+    }
+
+    // Add member
+    const member = await prisma.workspaceMember.create({
+      data: {
+        userId: user.id,
+        workspaceId,
+        role: role === "ADMIN" ? "ADMIN" : "MEMBER",
+      },
+      include: {
+        user: true,
+      },
+    });
+
+    return res.json({
+      member,
+      message: "Member added successfully",
+    });
+  } catch (error) {
+    console.error("Add Workspace Member Error:", error);
+
+    return res.status(500).json({
+      message: error.message || error.code,
+    });
+  }
 };

@@ -6,9 +6,23 @@ export const addComment = async (req, res) => {
         const { userId } = req.auth();
         const { content, taskId } = req.body;
 
+        if (!userId) {
+            return res.status(401).json({
+                message: "Unauthorized",
+            });
+        }
+
+        if (!taskId || !content?.trim()) {
+            return res.status(400).json({
+                message: "Task ID and comment content are required",
+            });
+        }
+
         // Check if task exists
         const task = await prisma.task.findUnique({
-            where: { id: taskId },
+            where: {
+                id: taskId,
+            },
         });
 
         if (!task) {
@@ -17,9 +31,11 @@ export const addComment = async (req, res) => {
             });
         }
 
-        // Check if user is project member
+        // Get project and project members
         const project = await prisma.project.findUnique({
-            where: { id: task.projectId },
+            where: {
+                id: task.projectId,
+            },
             include: {
                 members: {
                     include: {
@@ -35,20 +51,25 @@ export const addComment = async (req, res) => {
             });
         }
 
-        const member = project.members.find(
+        // Check project membership
+        const isProjectMember = project.members.some(
             (member) => member.userId === userId
         );
 
-        if (!member) {
+        // Project owner/team lead should also have access
+        const isProjectOwner = project.team_lead === userId;
+
+        if (!isProjectMember && !isProjectOwner) {
             return res.status(403).json({
                 message: "You are not a member of this project",
             });
         }
 
+        // Create comment
         const comment = await prisma.comment.create({
             data: {
                 taskId,
-                content,
+                content: content.trim(),
                 userId,
             },
             include: {
@@ -56,15 +77,19 @@ export const addComment = async (req, res) => {
             },
         });
 
-        res.json({ comment });
-    } catch (error) {
-        console.log(error);
+        return res.status(201).json({
+            comment,
+        });
 
-        res.status(500).json({
+    } catch (error) {
+        console.error("ADD COMMENT ERROR:", error);
+
+        return res.status(500).json({
             message: error.code || error.message,
         });
     }
 };
+
 
 // Get comments for task
 export const getTaskComments = async (req, res) => {
@@ -72,17 +97,25 @@ export const getTaskComments = async (req, res) => {
         const { taskId } = req.params;
 
         const comments = await prisma.comment.findMany({
-            where: { taskId },
+            where: {
+                taskId,
+            },
             include: {
                 user: true,
             },
+            orderBy: {
+                createdAt: "asc",
+            },
         });
 
-        res.json({ comments });
-    } catch (error) {
-        console.log(error);
+        return res.status(200).json({
+            comments,
+        });
 
-        res.status(500).json({
+    } catch (error) {
+        console.error("GET COMMENTS ERROR:", error);
+
+        return res.status(500).json({
             message: error.code || error.message,
         });
     }

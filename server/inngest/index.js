@@ -24,25 +24,36 @@ const syncUserCreation = inngest.createFunction(
     async ({ event }) => {
         const { data } = event;
 
-        console.log("Inngest: User created", data.id);
+        console.log("====================================");
+        console.log("INNGEST: USER CREATED");
+        console.log("User ID:", data.id);
+        console.log(
+            "Email:",
+            data?.email_addresses?.[0]?.email_address
+        );
+        console.log("====================================");
+
+        const email =
+            data?.email_addresses?.[0]?.email_address || "";
+
+        const name =
+            `${data?.first_name || ""} ${data?.last_name || ""}`.trim();
 
         await prisma.user.upsert({
             where: {
                 id: data.id,
             },
+
             update: {
-                email:
-                    data?.email_addresses?.[0]?.email_address || "",
-                name:
-                    `${data?.first_name || ""} ${data?.last_name || ""}`.trim(),
+                email,
+                name,
                 image: data?.image_url || "",
             },
+
             create: {
                 id: data.id,
-                email:
-                    data?.email_addresses?.[0]?.email_address || "",
-                name:
-                    `${data?.first_name || ""} ${data?.last_name || ""}`.trim(),
+                email,
+                name,
                 image: data?.image_url || "",
             },
         });
@@ -65,22 +76,39 @@ const syncUserUpdation = inngest.createFunction(
     async ({ event }) => {
         const { data } = event;
 
-        console.log("Inngest: User updated", data.id);
+        console.log(
+            "Inngest: User updated",
+            data.id
+        );
 
-        await prisma.user.update({
+        const email =
+            data?.email_addresses?.[0]?.email_address || "";
+
+        const name =
+            `${data?.first_name || ""} ${data?.last_name || ""}`.trim();
+
+        await prisma.user.upsert({
             where: {
                 id: data.id,
             },
-            data: {
-                email:
-                    data?.email_addresses?.[0]?.email_address || "",
-                name:
-                    `${data?.first_name || ""} ${data?.last_name || ""}`.trim(),
+
+            update: {
+                email,
+                name,
+                image: data?.image_url || "",
+            },
+
+            create: {
+                id: data.id,
+                email,
+                name,
                 image: data?.image_url || "",
             },
         });
 
-        console.log("Inngest: User updated in database");
+        console.log(
+            "Inngest: User updated in database"
+        );
     }
 );
 
@@ -98,7 +126,10 @@ const syncUserDeletion = inngest.createFunction(
     async ({ event }) => {
         const { data } = event;
 
-        console.log("Inngest: User deleted", data.id);
+        console.log(
+            "Inngest: User deleted",
+            data.id
+        );
 
         await prisma.user.deleteMany({
             where: {
@@ -106,12 +137,14 @@ const syncUserDeletion = inngest.createFunction(
             },
         });
 
-        console.log("Inngest: User deleted from database");
+        console.log(
+            "Inngest: User deleted from database"
+        );
     }
 );
 
 // ========================================
-// WORKSPACE / ORGANIZATION CREATED
+// ORGANIZATION CREATED
 // ========================================
 
 const syncWorkspaceCreation = inngest.createFunction(
@@ -121,6 +154,7 @@ const syncWorkspaceCreation = inngest.createFunction(
             event: "clerk/organization.created",
         },
     },
+
     async ({ event, step }) => {
         const { data } = event;
 
@@ -132,32 +166,26 @@ const syncWorkspaceCreation = inngest.createFunction(
         console.log("Created by:", data.created_by);
         console.log("====================================");
 
-        // ========================================
-        // STEP 1: FIND USER
-        // ========================================
+        // STEP 1: FIND OWNER
 
         const user = await step.run(
-            "wait-for-user",
+            "find-organization-owner",
             async () => {
-                const existingUser = await prisma.user.findUnique({
-                    where: {
-                        id: data.created_by,
-                    },
-                });
-
-                console.log(
-                    "Checking owner in Neon:",
-                    data.created_by
-                );
+                const existingUser =
+                    await prisma.user.findUnique({
+                        where: {
+                            id: data.created_by,
+                        },
+                    });
 
                 if (!existingUser) {
                     throw new Error(
-                        `User ${data.created_by} does not exist in Neon yet`
+                        `User ${data.created_by} does not exist in Neon`
                     );
                 }
 
                 console.log(
-                    "Owner found in Neon:",
+                    "Organization owner found:",
                     existingUser.id
                 );
 
@@ -165,61 +193,60 @@ const syncWorkspaceCreation = inngest.createFunction(
             }
         );
 
-        // ========================================
         // STEP 2: CREATE / UPDATE WORKSPACE
-        // ========================================
 
         const workspace = await step.run(
             "sync-workspace",
             async () => {
-                const workspace = await prisma.workspace.upsert({
-                    where: {
-                        id: data.id,
-                    },
+                const savedWorkspace =
+                    await prisma.workspace.upsert({
+                        where: {
+                            id: data.id,
+                        },
 
-                    update: {
-                        name: data.name,
-                        slug: data.slug,
-                        image_url: data.image_url || "",
+                        update: {
+                            name: data.name,
+                            slug: data.slug,
+                            image_url:
+                                data.image_url || "",
 
-                        owner: {
-                            connect: {
-                                id: user.id,
+                            owner: {
+                                connect: {
+                                    id: user.id,
+                                },
                             },
                         },
-                    },
 
-                    create: {
-                        id: data.id,
-                        name: data.name,
-                        slug: data.slug,
-                        image_url: data.image_url || "",
+                        create: {
+                            id: data.id,
+                            name: data.name,
+                            slug: data.slug,
+                            image_url:
+                                data.image_url || "",
 
-                        owner: {
-                            connect: {
-                                id: user.id,
+                            owner: {
+                                connect: {
+                                    id: user.id,
+                                },
                             },
                         },
-                    },
-                });
+                    });
 
                 console.log(
                     "Workspace saved:",
-                    workspace.id
+                    savedWorkspace.id
                 );
 
-                return workspace;
+                return savedWorkspace;
             }
         );
 
-        // ========================================
-        // STEP 3: CREATE / UPDATE ADMIN MEMBER
-        // ========================================
+        // STEP 3: ADD OWNER AS ADMIN
 
         const member = await step.run(
-            "sync-workspace-member",
+            "sync-workspace-owner",
             async () => {
-                const member =
+                const workspaceMember =
                     await prisma.workspaceMember.upsert({
                         where: {
                             userId_workspaceId: {
@@ -240,11 +267,11 @@ const syncWorkspaceCreation = inngest.createFunction(
                     });
 
                 console.log(
-                    "Workspace member saved:",
-                    member.id
+                    "Workspace owner member saved:",
+                    workspaceMember.id
                 );
 
-                return member;
+                return workspaceMember;
             }
         );
 
@@ -263,7 +290,7 @@ const syncWorkspaceCreation = inngest.createFunction(
 );
 
 // ========================================
-// WORKSPACE / ORGANIZATION UPDATED
+// ORGANIZATION UPDATED
 // ========================================
 
 const syncWorkspaceUpdation = inngest.createFunction(
@@ -273,6 +300,7 @@ const syncWorkspaceUpdation = inngest.createFunction(
             event: "clerk/organization.updated",
         },
     },
+
     async ({ event }) => {
         const { data } = event;
 
@@ -285,6 +313,7 @@ const syncWorkspaceUpdation = inngest.createFunction(
             where: {
                 id: data.id,
             },
+
             data: {
                 name: data.name,
                 slug: data.slug,
@@ -293,13 +322,13 @@ const syncWorkspaceUpdation = inngest.createFunction(
         });
 
         console.log(
-            "Workspace updated in database"
+            "Inngest: Workspace updated"
         );
     }
 );
 
 // ========================================
-// WORKSPACE / ORGANIZATION DELETED
+// ORGANIZATION DELETED
 // ========================================
 
 const syncWorkspaceDeletion = inngest.createFunction(
@@ -309,6 +338,7 @@ const syncWorkspaceDeletion = inngest.createFunction(
             event: "clerk/organization.deleted",
         },
     },
+
     async ({ event }) => {
         const { data } = event;
 
@@ -324,85 +354,204 @@ const syncWorkspaceDeletion = inngest.createFunction(
         });
 
         console.log(
-            "Workspace deleted from database"
+            "Inngest: Workspace deleted"
         );
     }
 );
 
 // ========================================
-// WORKSPACE MEMBER CREATED
+// ORGANIZATION MEMBER CREATED
 // ========================================
 
-const syncWorkspaceMemberCreation = inngest.createFunction(
-    {
-        id: "sync-workspace-member-creation-from-clerk",
-        triggers: {
-            event: "clerk/organizationMembership.created",
+const syncWorkspaceMemberCreation =
+    inngest.createFunction(
+        {
+            id: "sync-workspace-member-creation-from-clerk",
+
+            triggers: {
+                event:
+                    "clerk/organizationMembership.created",
+            },
         },
-    },
-    async ({ event }) => {
-        const { data } = event;
 
-        const userId =
-            data.public_user_data?.user_id;
+        async ({ event, step }) => {
+            const { data } = event;
 
-        const organizationId =
-            data.organization?.id;
-
-        if (!userId || !organizationId) {
-            throw new Error(
-                "Missing userId or organizationId in membership created event"
+            console.log("====================================");
+            console.log(
+                "ORGANIZATION MEMBER CREATED"
             );
+            console.log("Membership ID:", data.id);
+            console.log(
+                "Organization:",
+                data.organization?.id
+            );
+            console.log(
+                "User:",
+                data.public_user_data?.user_id
+            );
+            console.log(
+                "Role:",
+                data.role
+            );
+            console.log("====================================");
+
+            const userId =
+                data.public_user_data?.user_id;
+
+            const organizationId =
+                data.organization?.id;
+
+            if (!userId) {
+                throw new Error(
+                    "User ID missing from organization membership event"
+                );
+            }
+
+            if (!organizationId) {
+                throw new Error(
+                    "Organization ID missing from organization membership event"
+                );
+            }
+
+            // STEP 1: FIND USER
+
+            const user = await step.run(
+                "find-member-user",
+                async () => {
+                    const existingUser =
+                        await prisma.user.findUnique({
+                            where: {
+                                id: userId,
+                            },
+                        });
+
+                    if (!existingUser) {
+                        throw new Error(
+                            `User ${userId} does not exist in Neon yet`
+                        );
+                    }
+
+                    console.log(
+                        "Member user found:",
+                        existingUser.id
+                    );
+
+                    return existingUser;
+                }
+            );
+
+            // STEP 2: FIND WORKSPACE
+
+            const workspace = await step.run(
+                "find-member-workspace",
+                async () => {
+                    const existingWorkspace =
+                        await prisma.workspace.findUnique({
+                            where: {
+                                id: organizationId,
+                            },
+                        });
+
+                    if (!existingWorkspace) {
+                        throw new Error(
+                            `Workspace ${organizationId} does not exist in Neon yet`
+                        );
+                    }
+
+                    console.log(
+                        "Workspace found:",
+                        existingWorkspace.id
+                    );
+
+                    return existingWorkspace;
+                }
+            );
+
+            // STEP 3: CREATE MEMBER
+
+            const role =
+                data.role === "org:admin"
+                    ? "ADMIN"
+                    : "MEMBER";
+
+            const member = await step.run(
+                "sync-workspace-member",
+                async () => {
+                    const workspaceMember =
+                        await prisma.workspaceMember.upsert({
+                            where: {
+                                userId_workspaceId: {
+                                    userId: user.id,
+                                    workspaceId:
+                                        workspace.id,
+                                },
+                            },
+
+                            update: {
+                                role,
+                            },
+
+                            create: {
+                                userId: user.id,
+                                workspaceId:
+                                    workspace.id,
+                                role,
+                            },
+                        });
+
+                    console.log(
+                        "Workspace member saved:",
+                        workspaceMember.id
+                    );
+
+                    return workspaceMember;
+                }
+            );
+
+            console.log("====================================");
+            console.log(
+                "MEMBER SYNC COMPLETED"
+            );
+            console.log(
+                "User:",
+                user.id
+            );
+            console.log(
+                "Workspace:",
+                workspace.id
+            );
+            console.log(
+                "Member:",
+                member.id
+            );
+            console.log("====================================");
+
+            return {
+                success: true,
+                userId: user.id,
+                workspaceId: workspace.id,
+                memberId: member.id,
+            };
         }
-
-        console.log(
-            "Inngest: Organization membership created",
-            data.id
-        );
-
-        await prisma.workspaceMember.upsert({
-            where: {
-                userId_workspaceId: {
-                    userId: userId,
-                    workspaceId: organizationId,
-                },
-            },
-
-            update: {
-                role:
-                    data.role === "org:admin"
-                        ? "ADMIN"
-                        : "MEMBER",
-            },
-
-            create: {
-                userId: userId,
-                workspaceId: organizationId,
-                role:
-                    data.role === "org:admin"
-                        ? "ADMIN"
-                        : "MEMBER",
-            },
-        });
-
-        console.log(
-            "Workspace member saved"
-        );
-    }
-);
+    );
 
 // ========================================
-// WORKSPACE MEMBER UPDATED
+// ORGANIZATION MEMBER UPDATED
 // ========================================
 
 const syncWorkspaceMemberUpdation =
     inngest.createFunction(
         {
-            id: "sync-workspace-member-updation-from-clerk",
+            id:
+                "sync-workspace-member-updation-from-clerk",
+
             triggers: {
-                event: "clerk/organizationMembership.updated",
+                event:
+                    "clerk/organizationMembership.updated",
             },
         },
+
         async ({ event }) => {
             const { data } = event;
 
@@ -414,7 +563,7 @@ const syncWorkspaceMemberUpdation =
 
             if (!userId || !organizationId) {
                 throw new Error(
-                    "Missing userId or organizationId in membership updated event"
+                    "Missing userId or organizationId"
                 );
             }
 
@@ -426,13 +575,14 @@ const syncWorkspaceMemberUpdation =
             await prisma.workspaceMember.update({
                 where: {
                     userId_workspaceId: {
-                        userId: userId,
-                        workspaceId: organizationId,
+                        userId,
+                        workspaceId:
+                            organizationId,
                     },
                 },
 
                 data: {
-                    role: role,
+                    role,
                 },
             });
 
@@ -443,17 +593,21 @@ const syncWorkspaceMemberUpdation =
     );
 
 // ========================================
-// WORKSPACE MEMBER DELETED
+// ORGANIZATION MEMBER DELETED
 // ========================================
 
 const syncWorkspaceMemberDeletion =
     inngest.createFunction(
         {
-            id: "sync-workspace-member-deletion-from-clerk",
+            id:
+                "sync-workspace-member-deletion-from-clerk",
+
             triggers: {
-                event: "clerk/organizationMembership.deleted",
+                event:
+                    "clerk/organizationMembership.deleted",
             },
         },
+
         async ({ event }) => {
             const { data } = event;
 
@@ -465,14 +619,15 @@ const syncWorkspaceMemberDeletion =
 
             if (!userId || !organizationId) {
                 throw new Error(
-                    "Missing userId or organizationId in membership deleted event"
+                    "Missing userId or organizationId"
                 );
             }
 
             await prisma.workspaceMember.deleteMany({
                 where: {
-                    userId: userId,
-                    workspaceId: organizationId,
+                    userId,
+                    workspaceId:
+                        organizationId,
                 },
             });
 
@@ -483,192 +638,388 @@ const syncWorkspaceMemberDeletion =
     );
 
 // ========================================
-// INNGEST FUNCTION TO SEND EMAIL
-// ON TASK ASSIGNMENT
+// SEND TASK ASSIGNMENT EMAIL
 // ========================================
 
-const sendTaskAssignmentEmail = inngest.createFunction(
-    {
-        id: "send-task-assignment-email",
-        triggers: {
-            event: "app/task.assigned",
+const sendTaskAssignmentEmail =
+    inngest.createFunction(
+        {
+            id: "send-task-assignment-email",
+
+            triggers: {
+                event: "app/task.assigned",
+            },
         },
-    },
-    async ({ event, step }) => {
-        const { taskId, origin } = event.data;
 
-        // ========================================
-        // FIND TASK
-        // ========================================
+        async ({ event, step }) => {
+            console.log("====================================");
+            console.log("🚀 TASK ASSIGNMENT EVENT RECEIVED");
+            console.log("Event:", event);
+            console.log("====================================");
 
-        const task = await prisma.task.findUnique({
-            where: {
-                id: taskId,
-            },
-            include: {
-                assignee: true,
-                project: true,
-            },
-        });
+            const {
+                taskId,
+                origin,
+            } = event.data;
 
-        if (!task) {
-            throw new Error(
-                `Task ${taskId} not found`
-            );
-        }
-
-        if (!task.assignee) {
-            throw new Error(
-                `Task ${taskId} does not have an assignee`
-            );
-        }
-
-        if (!task.project) {
-            throw new Error(
-                `Task ${taskId} does not have a project`
-            );
-        }
-
-        // ========================================
-        // SEND ASSIGNMENT EMAIL
-        // ========================================
-
-        await sendEmail({
-            to: task.assignee.email,
-            subject: `New Task Assignment in ${task.project.name}`,
-            body: `
-                <div style="max-width: 600px;">
-                    <h2>Hi ${task.assignee.name},</h2>
-
-                    <p style="font-size: 16px;">
-                        You've been assigned a new task:
-                    </p>
-
-                    <p style="font-size: 18px; font-weight: bold; color: #007bff; margin: 8px 0;">
-                        ${task.title}
-                    </p>
-
-                    <div style="border: 1px solid #ddd; padding: 12px 16px; border-radius: 6px; margin-bottom: 30px;">
-                        <p style="margin: 6px 0;">
-                            <strong>Description:</strong>
-                            ${task.description || "No description"}
-                        </p>
-
-                        <p style="margin: 6px 0;">
-                            <strong>Due Date:</strong>
-                            ${new Date(task.due_date).toLocaleDateString()}
-                        </p>
-                    </div>
-
-                    <a
-                        href="${origin}"
-                        style="background-color: #007bff; padding: 12px 24px; border-radius: 5px; color: #fff; font-weight: 600; font-size: 16px; text-decoration: none;"
-                    >
-                        View Task
-                    </a>
-
-                    <p style="margin-top: 20px; font-size: 14px; color: #6c757d;">
-                        Please make sure to review and complete it before the due date.
-                    </p>
-                </div>
-            `,
-        });
-
-        // ========================================
-        // WAIT UNTIL DUE DATE
-        // ========================================
-
-        if (
-            new Date(task.due_date).toLocaleDateString() !==
-            new Date().toLocaleDateString()
-        ) {
-            await step.sleepUntil(
-                "wait-for-the-due-date",
-                new Date(task.due_date)
-            );
+            if (!taskId) {
+                throw new Error(
+                    "Task ID missing from task.assigned event"
+                );
+            }
 
             // ========================================
-            // CHECK IF TASK IS COMPLETED
+            // FIND TASK
             // ========================================
 
-            await step.run(
-                "check-if-task-is-completed",
+            const task = await step.run(
+                "find-task-for-assignment-email",
                 async () => {
-                    const updatedTask =
+                    const foundTask =
                         await prisma.task.findUnique({
                             where: {
                                 id: taskId,
                             },
+
                             include: {
                                 assignee: true,
                                 project: true,
                             },
                         });
 
-                    if (!updatedTask) {
-                        return;
-                    }
-
-                    if (
-                        updatedTask.status !== "Done"
-                    ) {
-                        await step.run(
-                            "send-task-reminder-mail",
-                            async () => {
-                                await sendEmail({
-                                    to: updatedTask.assignee.email,
-
-                                    subject: `Reminder for ${updatedTask.project.name}`,
-
-                                    body: `
-                                        <div style="max-width: 600px;">
-                                            <h2>
-                                                Hi ${updatedTask.assignee.name},
-                                            </h2>
-
-                                            <p style="font-size: 16px;">
-                                                This is a reminder that your task is still pending:
-                                            </p>
-
-                                            <p style="font-size: 18px; font-weight: bold; color: #007bff; margin: 8px 0;">
-                                                ${updatedTask.title}
-                                            </p>
-
-                                            <div style="border: 1px solid #ddd; padding: 12px 16px; border-radius: 6px; margin-bottom: 30px;">
-                                                <p style="margin: 6px 0;">
-                                                    <strong>Description:</strong>
-                                                    ${updatedTask.description || "No description"}
-                                                </p>
-
-                                                <p style="margin: 6px 0;">
-                                                    <strong>Due Date:</strong>
-                                                    ${new Date(
-                                                        updatedTask.due_date
-                                                    ).toLocaleDateString()}
-                                                </p>
-                                            </div>
-
-                                            <a
-                                                href="${origin}"
-                                                style="background-color: #007bff; padding: 12px 24px; border-radius: 5px; color: #fff; font-weight: 600; font-size: 16px; text-decoration: none;"
-                                            >
-                                                View Task
-                                            </a>
-
-                                            <p style="margin-top: 20px; font-size: 14px; color: #6c757d;">
-                                                Please make sure to complete the task.
-                                            </p>
-                                        </div>
-                                    `,
-                                });
-                            }
+                    if (!foundTask) {
+                        throw new Error(
+                            `Task ${taskId} not found`
                         );
                     }
+
+                    if (!foundTask.assignee) {
+                        throw new Error(
+                            `Task ${taskId} does not have an assignee`
+                        );
+                    }
+
+                    if (!foundTask.assignee.email) {
+                        throw new Error(
+                            `Assignee ${foundTask.assignee.id} does not have an email`
+                        );
+                    }
+
+                    if (!foundTask.project) {
+                        throw new Error(
+                            `Task ${taskId} does not have a project`
+                        );
+                    }
+
+                    console.log("====================================");
+                    console.log("TASK FOUND");
+                    console.log("Task ID:", foundTask.id);
+                    console.log("Task Title:", foundTask.title);
+                    console.log(
+                        "Assignee ID:",
+                        foundTask.assigneeId
+                    );
+                    console.log(
+                        "Assignee Name:",
+                        foundTask.assignee.name
+                    );
+                    console.log(
+                        "Assignee Email:",
+                        foundTask.assignee.email
+                    );
+                    console.log(
+                        "Project:",
+                        foundTask.project.name
+                    );
+                    console.log("====================================");
+
+                    return foundTask;
                 }
             );
+
+            // ========================================
+            // SEND ASSIGNMENT EMAIL
+            // ========================================
+
+            await step.run(
+                "send-task-assignment-email",
+                async () => {
+                    console.log(
+                        "📧 ABOUT TO SEND TASK ASSIGNMENT EMAIL"
+                    );
+
+                    await sendEmail({
+                        to: task.assignee.email,
+
+                        subject:
+                            `New Task Assignment in ${task.project.name}`,
+
+                        body: `
+                            <div style="
+                                max-width: 600px;
+                                margin: 0 auto;
+                                font-family: Arial, sans-serif;
+                                padding: 20px;
+                            ">
+
+                                <h2>
+                                    Hi ${task.assignee.name || "there"},
+                                </h2>
+
+                                <p style="font-size: 16px;">
+                                    You've been assigned a new task:
+                                </p>
+
+                                <p style="
+                                    font-size: 18px;
+                                    font-weight: bold;
+                                    color: #007bff;
+                                    margin: 8px 0;
+                                ">
+                                    ${task.title}
+                                </p>
+
+                                <div style="
+                                    border: 1px solid #ddd;
+                                    padding: 12px 16px;
+                                    border-radius: 6px;
+                                    margin-bottom: 30px;
+                                ">
+
+                                    <p style="margin: 6px 0;">
+                                        <strong>Description:</strong>
+                                        ${task.description || "No description"}
+                                    </p>
+
+                                    <p style="margin: 6px 0;">
+                                        <strong>Due Date:</strong>
+                                        ${
+                                            task.due_date
+                                                ? new Date(
+                                                      task.due_date
+                                                  ).toLocaleDateString()
+                                                : "No due date"
+                                        }
+                                    </p>
+
+                                    <p style="margin: 6px 0;">
+                                        <strong>Priority:</strong>
+                                        ${task.priority || "Not specified"}
+                                    </p>
+
+                                    <p style="margin: 6px 0;">
+                                        <strong>Status:</strong>
+                                        ${task.status || "Not specified"}
+                                    </p>
+
+                                </div>
+
+                                <a
+                                    href="${
+                                        origin ||
+                                        "http://localhost:5173"
+                                    }"
+                                    style="
+                                        background-color: #007bff;
+                                        padding: 12px 24px;
+                                        border-radius: 5px;
+                                        color: #fff;
+                                        font-weight: 600;
+                                        font-size: 16px;
+                                        text-decoration: none;
+                                        display: inline-block;
+                                    "
+                                >
+                                    View Task
+                                </a>
+
+                                <p style="
+                                    margin-top: 20px;
+                                    font-size: 14px;
+                                    color: #6c757d;
+                                ">
+                                    Please make sure to review and
+                                    complete it before the due date.
+                                </p>
+
+                            </div>
+                        `,
+                    });
+
+                    console.log(
+                        "✅ TASK ASSIGNMENT EMAIL SENT"
+                    );
+                }
+            );
+
+            // ========================================
+            // WAIT UNTIL DUE DATE
+            // ========================================
+
+            if (
+                task.due_date &&
+                new Date(task.due_date) > new Date()
+            ) {
+                await step.sleepUntil(
+                    "wait-for-the-due-date",
+                    new Date(task.due_date)
+                );
+
+                // ========================================
+                // CHECK TASK STATUS
+                // ========================================
+
+                await step.run(
+                    "check-if-task-is-completed",
+                    async () => {
+                        const updatedTask =
+                            await prisma.task.findUnique({
+                                where: {
+                                    id: taskId,
+                                },
+
+                                include: {
+                                    assignee: true,
+                                    project: true,
+                                },
+                            });
+
+                        if (!updatedTask) {
+                            console.log(
+                                "Task no longer exists"
+                            );
+
+                            return;
+                        }
+
+                        if (!updatedTask.assignee) {
+                            console.log(
+                                "Task no longer has an assignee"
+                            );
+
+                            return;
+                        }
+
+                        if (
+                            updatedTask.status !== "Done"
+                        ) {
+                            console.log(
+                                "Sending overdue task reminder"
+                            );
+
+                            await sendEmail({
+                                to:
+                                    updatedTask.assignee.email,
+
+                                subject:
+                                    `Reminder for ${updatedTask.project.name}`,
+
+                                body: `
+                                    <div style="
+                                        max-width: 600px;
+                                        margin: 0 auto;
+                                        font-family: Arial, sans-serif;
+                                        padding: 20px;
+                                    ">
+
+                                        <h2>
+                                            Hi ${
+                                                updatedTask
+                                                    .assignee
+                                                    .name ||
+                                                "there"
+                                            },
+                                        </h2>
+
+                                        <p style="font-size: 16px;">
+                                            This is a reminder that your
+                                            task is still pending:
+                                        </p>
+
+                                        <p style="
+                                            font-size: 18px;
+                                            font-weight: bold;
+                                            color: #007bff;
+                                            margin: 8px 0;
+                                        ">
+                                            ${updatedTask.title}
+                                        </p>
+
+                                        <div style="
+                                            border: 1px solid #ddd;
+                                            padding: 12px 16px;
+                                            border-radius: 6px;
+                                            margin-bottom: 30px;
+                                        ">
+
+                                            <p style="margin: 6px 0;">
+                                                <strong>Description:</strong>
+                                                ${
+                                                    updatedTask.description ||
+                                                    "No description"
+                                                }
+                                            </p>
+
+                                            <p style="margin: 6px 0;">
+                                                <strong>Due Date:</strong>
+                                                ${
+                                                    updatedTask.due_date
+                                                        ? new Date(
+                                                              updatedTask.due_date
+                                                          ).toLocaleDateString()
+                                                        : "No due date"
+                                                }
+                                            </p>
+
+                                        </div>
+
+                                        <a
+                                            href="${
+                                                origin ||
+                                                "http://localhost:5173"
+                                            }"
+                                            style="
+                                                background-color: #007bff;
+                                                padding: 12px 24px;
+                                                border-radius: 5px;
+                                                color: #fff;
+                                                font-weight: 600;
+                                                font-size: 16px;
+                                                text-decoration: none;
+                                                display: inline-block;
+                                            "
+                                        >
+                                            View Task
+                                        </a>
+
+                                        <p style="
+                                            margin-top: 20px;
+                                            font-size: 14px;
+                                            color: #6c757d;
+                                        ">
+                                            Please make sure to complete
+                                            the task.
+                                        </p>
+
+                                    </div>
+                                `,
+                            });
+
+                            console.log(
+                                "✅ OVERDUE REMINDER EMAIL SENT"
+                            );
+                        }
+                    }
+                );
+            }
+
+            return {
+                success: true,
+                taskId,
+                email: task.assignee.email,
+            };
         }
-    }
-);
+    );
 
 // ========================================
 // EXPORT FUNCTIONS
