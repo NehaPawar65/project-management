@@ -6,6 +6,7 @@ import { useDispatch, useSelector } from "react-redux";
 import { loadTheme } from "../features/themeSlice";
 import { fetchworkspaces } from "../features/workspaceSlice";
 import { Loader2Icon } from "lucide-react";
+
 import {
     useUser,
     useAuth,
@@ -17,18 +18,21 @@ import {
 const SYNC_POLL_INTERVAL_MS = 2000;
 const SYNC_POLL_MAX_ATTEMPTS = 15;
 
-const Layout = () => {
+// ============================================================
+// AUTHENTICATED LAYOUT
+// ============================================================
+
+const AuthenticatedLayout = () => {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [syncFailed, setSyncFailed] = useState(false);
 
-    const { loading, workspaces } = useSelector(
+    const { loading, workspaces = [] } = useSelector(
         (state) => state.workspace
     );
 
     const dispatch = useDispatch();
 
-    const { user, isLoaded: isUserLoaded } = useUser();
-
+    const { user } = useUser();
     const { getToken, orgId } = useAuth();
 
     const {
@@ -43,36 +47,43 @@ const Layout = () => {
     const attemptsRef = useRef(0);
     const activatingOrganizationRef = useRef(false);
 
-    // Load theme
+    // ============================================================
+    // LOAD THEME
+    // ============================================================
+
     useEffect(() => {
         dispatch(loadTheme());
     }, [dispatch]);
 
-    // Automatically activate user's organization
-    useEffect(() => {
-        if (!isUserLoaded || !user) {
-            return;
-        }
+    // ============================================================
+    // ACTIVATE FIRST ORGANIZATION
+    // ============================================================
 
+    useEffect(() => {
         if (!isOrganizationsLoaded) {
             return;
         }
 
+        if (!user) {
+            return;
+        }
+
+        // Already active
         if (orgId) {
             return;
         }
 
-        const memberships =
-            userMemberships?.data || [];
+        const memberships = userMemberships?.data || [];
 
+        // User has no organizations
         if (memberships.length === 0) {
             return;
         }
 
-        const membership = memberships[0];
+        const firstMembership = memberships[0];
 
         const organizationId =
-            membership?.organization?.id;
+            firstMembership?.organization?.id;
 
         if (!organizationId) {
             return;
@@ -84,18 +95,31 @@ const Layout = () => {
 
         activatingOrganizationRef.current = true;
 
+        console.log(
+            "Activating Clerk organization:",
+            organizationId
+        );
+
         setActive({
             organization: organizationId,
-        }).catch((error) => {
-            console.error(
-                "Failed to activate organization:",
-                error
-            );
+        })
+            .then(() => {
+                console.log(
+                    "Clerk organization activated:",
+                    organizationId
+                );
 
-            activatingOrganizationRef.current = false;
-        });
+                activatingOrganizationRef.current = false;
+            })
+            .catch((error) => {
+                console.error(
+                    "Failed to activate organization:",
+                    error
+                );
+
+                activatingOrganizationRef.current = false;
+            });
     }, [
-        isUserLoaded,
         user,
         isOrganizationsLoaded,
         userMemberships,
@@ -103,33 +127,52 @@ const Layout = () => {
         setActive,
     ]);
 
-    // Initial workspace fetch
+    // ============================================================
+    // INITIAL WORKSPACE FETCH
+    // ============================================================
+
     useEffect(() => {
-        if (!isUserLoaded || !user) {
+        if (!user) {
             return;
         }
 
-        if (workspaces.length === 0) {
-            dispatch(
-                fetchworkspaces({
-                    getToken,
-                })
-            );
+        if (!isOrganizationsLoaded) {
+            return;
         }
+
+        if (workspaces.length > 0) {
+            return;
+        }
+
+        console.log("Fetching workspaces...");
+
+        dispatch(
+            fetchworkspaces({
+                getToken,
+            })
+        );
     }, [
-        isUserLoaded,
         user,
+        isOrganizationsLoaded,
         dispatch,
         getToken,
         workspaces.length,
     ]);
 
-    // Workspace synchronization polling
+    // ============================================================
+    // WORKSPACE SYNCHRONIZATION
+    // ============================================================
+
     useEffect(() => {
-        if (!isUserLoaded || !user) {
+        if (!user) {
             return;
         }
 
+        if (!isOrganizationsLoaded) {
+            return;
+        }
+
+        // Already have workspace
         if (workspaces.length > 0) {
             setSyncFailed(false);
             attemptsRef.current = 0;
@@ -139,6 +182,14 @@ const Layout = () => {
                 pollRef.current = null;
             }
 
+            return;
+        }
+
+        // User has no Clerk organization
+        const memberships = userMemberships?.data || [];
+
+        if (memberships.length === 0) {
+            setSyncFailed(true);
             return;
         }
 
@@ -152,6 +203,10 @@ const Layout = () => {
         const pollWorkspaces = async () => {
             attemptsRef.current += 1;
 
+            console.log(
+                `Workspace sync attempt ${attemptsRef.current}/${SYNC_POLL_MAX_ATTEMPTS}`
+            );
+
             try {
                 const result = await dispatch(
                     fetchworkspaces({
@@ -161,6 +216,11 @@ const Layout = () => {
 
                 const fetchedWorkspaces =
                     result.payload || [];
+
+                console.log(
+                    "Fetched workspaces:",
+                    fetchedWorkspaces
+                );
 
                 if (fetchedWorkspaces.length > 0) {
                     setSyncFailed(false);
@@ -208,10 +268,8 @@ const Layout = () => {
             }
         };
 
-        // Run immediately
         pollWorkspaces();
 
-        // Continue polling
         pollRef.current = setInterval(
             pollWorkspaces,
             SYNC_POLL_INTERVAL_MS
@@ -224,14 +282,18 @@ const Layout = () => {
             }
         };
     }, [
-        isUserLoaded,
         user,
+        isOrganizationsLoaded,
+        userMemberships,
         dispatch,
         getToken,
         workspaces.length,
     ]);
 
-    // Cleanup
+    // ============================================================
+    // CLEANUP
+    // ============================================================
+
     useEffect(() => {
         return () => {
             if (pollRef.current) {
@@ -241,8 +303,11 @@ const Layout = () => {
         };
     }, []);
 
-    // Clerk loading
-    if (!isUserLoaded || !isOrganizationsLoaded) {
+    // ============================================================
+    // CLERK ORGANIZATIONS LOADING
+    // ============================================================
+
+    if (!isOrganizationsLoaded) {
         return (
             <div className="flex items-center justify-center h-screen bg-white dark:bg-zinc-950">
                 <Loader2Icon className="size-7 text-blue-500 animate-spin" />
@@ -250,16 +315,44 @@ const Layout = () => {
         );
     }
 
-    // Not signed in
-    if (!user) {
+    // ============================================================
+    // NO ORGANIZATION
+    // ============================================================
+
+    if (!orgId) {
+        const memberships = userMemberships?.data || [];
+
+        if (memberships.length === 0) {
+            return (
+                <div className="min-h-screen flex flex-col gap-4 justify-center items-center bg-white dark:bg-zinc-950 px-6">
+                    <p className="text-sm text-gray-700 dark:text-slate-300">
+                        You don't have a workspace yet.
+                    </p>
+
+                    <p className="text-xs text-gray-500 dark:text-zinc-400 max-w-md text-center">
+                        Create a workspace to continue.
+                    </p>
+
+                    <CreateOrganization />
+                </div>
+            );
+        }
+
         return (
-            <div className="flex justify-center items-center h-screen bg-white dark:bg-zinc-950">
-                <SignIn />
+            <div className="min-h-screen flex flex-col gap-3 justify-center items-center bg-white dark:bg-zinc-950">
+                <Loader2Icon className="size-7 text-blue-500 animate-spin" />
+
+                <p className="text-sm text-gray-500 dark:text-slate-400">
+                    Activating your organization…
+                </p>
             </div>
         );
     }
 
-    // Workspace loading
+    // ============================================================
+    // WORKSPACE LOADING
+    // ============================================================
+
     if (loading) {
         return (
             <div className="flex items-center justify-center h-screen bg-white dark:bg-zinc-950">
@@ -268,21 +361,32 @@ const Layout = () => {
         );
     }
 
-    // No active organization yet
-    if (!orgId && !syncFailed) {
-        return (
-            <div className="min-h-screen flex flex-col gap-3 justify-center items-center bg-white dark:bg-zinc-950">
-                <Loader2Icon className="size-7 text-blue-500 animate-spin" />
+    // ============================================================
+    // WORKSPACE SYNC FAILED
+    // ============================================================
 
-                <p className="text-sm text-gray-500 dark:text-slate-400">
-                    Setting up your organization…
+    if (workspaces.length === 0 && syncFailed) {
+        return (
+            <div className="min-h-screen flex flex-col gap-4 justify-center items-center bg-white dark:bg-zinc-950 px-6">
+                <p className="text-sm text-red-500 max-w-md text-center">
+                    We couldn't find your workspace after
+                    synchronization.
                 </p>
+
+                <p className="text-xs text-gray-500 dark:text-zinc-400 max-w-md text-center">
+                    Please refresh the page and try again.
+                </p>
+
+                <CreateOrganization />
             </div>
         );
     }
 
-    // Waiting for workspace synchronization
-    if (workspaces.length === 0 && !syncFailed) {
+    // ============================================================
+    // WAITING FOR WORKSPACE
+    // ============================================================
+
+    if (workspaces.length === 0) {
         return (
             <div className="min-h-screen flex flex-col gap-3 justify-center items-center bg-white dark:bg-zinc-950">
                 <Loader2Icon className="size-7 text-blue-500 animate-spin" />
@@ -294,27 +398,10 @@ const Layout = () => {
         );
     }
 
-    // Synchronization failed
-    if (workspaces.length === 0 && syncFailed) {
-        return (
-            <div className="min-h-screen flex flex-col gap-4 justify-center items-center bg-white dark:bg-zinc-950 px-6">
-                <p className="text-sm text-red-500 max-w-md text-center">
-                    We couldn't find your workspace after
-                    synchronization.
-                </p>
+    // ============================================================
+    // NORMAL APPLICATION
+    // ============================================================
 
-                <p className="text-xs text-gray-500 dark:text-zinc-400 max-w-md text-center">
-                    If you accepted an invitation, please wait a
-                    moment and refresh the page. If this is a new
-                    account, you can create an organization.
-                </p>
-
-                <CreateOrganization />
-            </div>
-        );
-    }
-
-    // Normal application
     return (
         <div className="flex bg-white dark:bg-zinc-950 text-gray-900 dark:text-slate-100">
             <Sidebar
@@ -334,6 +421,36 @@ const Layout = () => {
             </div>
         </div>
     );
+};
+
+// ============================================================
+// ROOT LAYOUT
+// ============================================================
+
+const Layout = () => {
+    const { user, isLoaded } = useUser();
+
+    if (!isLoaded) {
+        return (
+            <div className="flex items-center justify-center h-screen bg-white dark:bg-zinc-950">
+                <Loader2Icon className="size-7 text-blue-500 animate-spin" />
+            </div>
+        );
+    }
+
+    // Not signed in
+    if (!user) {
+        return (
+            <div className="flex justify-center items-center h-screen bg-white dark:bg-zinc-950">
+                <SignIn />
+            </div>
+        );
+    }
+
+    // IMPORTANT:
+    // useOrganizationList() is only mounted AFTER
+    // Clerk confirms that the user is signed in.
+    return <AuthenticatedLayout />;
 };
 
 export default Layout;
